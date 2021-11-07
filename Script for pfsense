@@ -1,0 +1,73 @@
+#./rate_to_influx http://10.0.5.5:8086 pfsense 10.0.0.0/24 re1
+
+
+
+
+#!/bin/sh
+# DNS Lookups
+# Author: Luis Felipe Domínguez Vega <ldominguezvega@gmail.com>
+# https://gist.github.com/lfdominguez/08de623d9f9c0fa84e6b4d5d0d25025c
+# Program to use with the rate software to send to InfluxDB the
+# rate of each IP on interface
+#
+# rate_to_influx <influxdb_url> <influxdb_database> <local_network> <interface>
+# rate_to_influx http://10.0.5.5:8086 network 10.0.0.0/24 re1
+
+#- - - - - - - - - - - - - - - - - - -
+# rate -i re1 -r 1 -e -nl -Ab -a 255 -c 10.0.0.0/24 -d
+# rate -i $4 -r 1 -e -nl -Ab -a 255 -c $3 -d
+#10.0.0.1: 0:1424 :0:1424: 0:1: 0:1
+#
+
+logger "$0 [I] Started rate estimator"
+
+URL="$1/write?db=$2&precision=s"
+
+DATA_INFLUX=""
+
+PROGRAM='
+{
+  base_1="network_metric,host="
+  base_2=",direction="
+  base_3="byte_rate="
+
+  split($0, data, ":")
+
+  print base_1 data[1] base_2 "download " base_3 data[4] " " ts
+  print base_1 data[1] base_2 "upload " base_3 data[5] " " ts
+  printf " "
+}
+'
+
+FLAG_TS=1
+rate -i $4 -r 1 -e -nl -Ab -a 255 -c $3 -d | while read -r line; do
+
+FIRST_LINE=`echo $line | head -c 1`
+if [ x"$FIRST_LINE" == x"-" ]; then
+    curl -i -s -k -o /dev/null -XPOST "$URL" --data-binary "$DATA_INFLUX" || {
+    logger "$0 [W] Can't write to InfluxDB Database"
+    }
+    DATA_INFLUX=""
+    FLAG_TS=1
+else
+
+    userip=`echo $line | awk -F: '{print $1}'`
+    dns=`getent hosts $userip | awk '{ print $3 }'` # change $3 to $2 for fqdn
+    if [ -z "$dns" ]; then
+        # Fall back to IP if no DNS found
+        $dns=$userip
+    else
+        newline=`echo $line | sed 's/^[^:]*://'`
+        line=`echo "$dns:$newline"`
+        #echo $line
+
+        if [ $FLAG_TS -eq 1 ]; then
+            TS=`date +%s`
+            FLAG_TS=0
+        fi
+
+        DATA_FROM_RATE=`echo "$line" | awk -v ts="$TS" "$PROGRAM"`
+        DATA_INFLUX="$DATA_INFLUX$DATA_FROM_RATE"
+    fi
+fi
+done
