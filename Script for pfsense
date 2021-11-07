@@ -8,7 +8,7 @@
 # rate of each IP on interface
 #
 # rate_to_influx <influxdb_url> <influxdb_database> <local_network> <interface>
-# rate_to_influx http://10.0.5.5:8086 network 10.0.0.0/24 re1
+# rate_to_influx http://10.0.0.253:8086 network 10.0.0.0/24 re1
 
 #- - - - - - - - - - - - - - - - - - -
 # rate -i re1 -r 1 -e -nl -Ab -a 255 -c 10.0.0.0/24 -d
